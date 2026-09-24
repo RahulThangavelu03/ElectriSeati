@@ -7,6 +7,7 @@ from datetime import datetime
 
 from app.models.event_type import EventType
 from fastapi import FastAPI, HTTPException
+from sqlalchemy.exc import IntegrityError
 
 app = FastAPI(title="ElectriSeati API")
 
@@ -16,8 +17,15 @@ class CreateEvent(BaseModel):
     description: str | None = None
     event_type: EventType
     category_id: int
-    venue: str
+    venue_id: int
     starts_at: datetime
+
+
+
+class CreateVenue(BaseModel):
+
+    name:str
+    location:str
 
 
 
@@ -101,17 +109,41 @@ async def Create_Events(event:CreateEvent):
            raise HTTPException(
            status_code=404,
            detail="Category not found"
-    )
+        )
 
+        result = await connection.execute(
+
+            text("""
+            
+              SELECT id FROM venues WHERE id = :venue_id
+             
+            
+             """),
+                { "venue_id":event.venue_id } 
+
+        )
+        
+
+        venue_data = result.fetchone()
+
+        if venue_data is None:
+             raise HTTPException(
+           status_code=404,
+           detail="Venue not found"
+        )
+
+
+
+     
 
         result= await connection.execute(
 
             text("""
-            INSERT INTO events (title,description,event_type,category_id,venue,starts_at,created_at)
+            INSERT INTO events (title,description,event_type,category_id,venue_id,starts_at,created_at)
             
             VALUES
-             (:title, :description ,:event_type, :category_id, :venue, :starts_at,NOW())
-             RETURNING id, title, description, event_type, category_id , venue,starts_at,created_at
+             (:title, :description ,:event_type, :category_id, :venue_id, :starts_at,NOW())
+             RETURNING id, title, description, event_type, category_id , venue_id,starts_at,created_at
             
             
             """),
@@ -121,7 +153,7 @@ async def Create_Events(event:CreateEvent):
                "description":event.description,
                "event_type":event.event_type.value,
                "category_id":event.category_id,
-               "venue":event.venue,
+               "venue_id":event.venue_id,
                "starts_at":event.starts_at,
                
 
@@ -139,7 +171,7 @@ async def Create_Events(event:CreateEvent):
            "description":new_event.description,
            "event_type":new_event.event_type,
            "category_id":new_event.category_id,
-           "venue":new_event.venue,
+           "venue_id":new_event.venue_id,
            "starts_at":new_event.starts_at,
            "created_at":new_event.created_at,
 
@@ -157,7 +189,7 @@ async def get_events():
             
             
             
-            SELECT id,title,description,event_type,category_id,venue,starts_at,created_at FROM events ORDER BY id
+            SELECT id,title,description,event_type,category_id,venue_id,starts_at,created_at FROM events ORDER BY id
             
             
             
@@ -175,7 +207,7 @@ async def get_events():
                 "description":row.description,
                 "event_type":row.event_type,
                 "category_id":row.category_id,
-                "venue":row.venue,
+                "venue_id":row.venue_id,
                 "starts_at":row.starts_at,
                 "created_at":row.created_at,
 
@@ -283,13 +315,7 @@ async def update_event(event_id:int,event:CreateEvent):
             {"category_id":event.category_id}
 
 
-            
-
-        
-            
-        
-        
-        )
+            )
 
 
         
@@ -345,7 +371,7 @@ async def update_event(event_id:int,event:CreateEvent):
            "starts_at":event.starts_at,
 
 
-
+ 
         })
         
         updated_event =result.fetchone()
@@ -430,3 +456,313 @@ async def delete_event(event_id:int):
         return {
             "message":"Event deleted Successfully"
         }
+
+
+@app.post("/venues")
+
+async def create_venue(venue:CreateVenue):
+
+    async with engine.begin() as connection:
+
+
+        result = await connection.execute(
+
+                 text("""
+                 
+                         SELECT id FROM venues WHERE LOWER(name) = LOWER(:venue_name) AND  LOWER(location) = LOWER(:venue_location)
+                 
+                 """),
+                    {"venue_name":venue.name,
+                    "venue_location":venue.location}
+
+        )
+
+
+        new_data = result.fetchone()
+
+        if new_data is not None:
+
+                  raise HTTPException(
+                status_code= 409,
+                detail="Venue already exsists"
+           )
+
+
+        result = await connection.execute(
+
+             text("""
+             
+                     INSERT INTO venues (name ,location) 
+
+                     VALUES (:name,:location)
+                     RETURNING id,name,location
+             
+             
+             
+             
+             
+             
+             """),
+
+
+                {   
+                    "name":venue.name,
+                
+                    "location":venue.location                
+                }
+
+                 
+
+
+
+
+        )
+
+        new_venue = result.fetchone()
+
+        return {
+
+                  "id":new_venue.id,  
+                 "name":new_venue.name,
+                 "location":new_venue.location
+        }
+
+
+@app.get("/venues")
+
+async def show_venues():
+
+    async with engine.connect() as connection:
+
+        result = await connection.execute(
+
+
+            text("""
+                  SELECT id,name,location FROM venues 
+                    
+            
+            """)
+
+               
+
+               
+        )
+
+        venues = [
+            {
+               "id":row.id,
+               "name":row.name,
+               "location":row.location
+
+            }
+
+            for row in result
+        ]
+
+        return venues
+
+
+
+@app.get("/venues/{venue_id}")
+
+async def Show_event(venue_id:int):
+
+    async with engine.connect() as connection:
+
+        result = await connection.execute(
+
+                text("""
+                SELECT id,name,location FROM venues WHERE id =:venue_id
+                """),{"venue_id":venue_id}
+
+
+
+
+        )
+
+
+        venue_data= result.fetchone()
+
+
+
+        if venue_data is None:
+                raise HTTPException(
+                status_code= 404,
+                detail="Venue not found"
+           )
+
+
+        return {
+
+            "id":venue_data.id,
+            "name":venue_data.name,
+            "location":venue_data.location
+        }
+
+
+
+
+
+@app.put("/venues/{venue_id}")
+
+async def Update_venue(venue_id:int ,venue:CreateVenue):
+
+    async with engine.begin() as connection:
+
+      
+
+        result = await connection.execute(
+
+
+              text (""" 
+              
+                       SELECT id from venues WHERE id = :venue_id
+              
+              
+              
+              
+              
+              """),{"venue_id":venue_id}
+
+
+
+
+
+        )
+
+
+        venue_data= result.fetchone()
+
+
+        if venue_data is None:
+
+              raise HTTPException(
+                status_code= 404,
+                detail="Venue not found"
+           )
+
+
+    try:
+
+        
+     async with engine.begin() as connection:
+
+        result = await connection.execute(
+
+
+             text(""" 
+             
+                    UPDATE venues 
+                SET
+
+                     
+                     name=:name,
+                     location=:location
+
+                WHERE id=:venue_id
+
+
+                RETURNING 
+
+                         id,
+                         name,
+                         location
+
+             
+             
+             
+             
+             """),
+
+                {
+                   "venue_id":venue_id,
+                   "name":venue.name,
+                   "location":venue.location
+
+                }
+
+
+           )
+
+
+        updated_venue= result.fetchone()
+
+
+    except IntegrityError:
+     raise HTTPException(
+        status_code=409,
+        detail="A venue with this name and location already exists"
+    )
+
+    return {
+
+
+
+                 "id":updated_venue.id,
+                 "name":updated_venue.name,
+                 "location":updated_venue.location
+        }
+
+
+
+
+
+
+
+@app.delete("/venues/{venue_id}")
+
+async def delete_venue(venue_id:int):
+
+    async with engine.begin() as connection:
+
+
+               # Check if venue exsist
+        
+
+        result = await connection.execute(
+            
+               text(""" 
+               
+                       SELECT id FROM venues WHERE id = :venue_id
+               
+               
+               
+               """)  ,{"venue_id":venue_id}
+
+
+
+        )
+
+
+
+        venue= result.fetchone()
+
+
+        if venue is None:
+            raise HTTPException(
+                status_code= 404,
+                detail="Venue not found"
+           )
+
+            # Deleting the venue
+        
+
+        result = await connection.execute(
+
+                text("DELETE FROM venues WHERE id= :venue_id "),
+
+                {"venue_id":venue_id}
+
+
+        )
+
+
+        return {
+
+            "message":"Venue deleted Successfully"
+        }
+        
+        
+
+
+        

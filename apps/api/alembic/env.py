@@ -7,6 +7,7 @@ from alembic import context
 from database import Base
 from app.models.event import Event  # noqa: F401
 from app.models.category import Category
+from app.models.venue import Venue
 
 
 config = context.config

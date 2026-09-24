@@ -7,6 +7,7 @@ from database import Base
 from app.models.event_type import EventType
 
 
+
 class Event(Base):
 
     __tablename__ = "events"
@@ -33,9 +34,11 @@ class Event(Base):
         nullable=False,
     )
 
-    venue: Mapped[str] = mapped_column(
-        String(200),
-        nullable=False,
+    
+
+    venue_id: Mapped[int] = mapped_column(
+    ForeignKey("venues.id"),
+    nullable=False,
     )
 
     starts_at: Mapped[datetime] = mapped_column(
