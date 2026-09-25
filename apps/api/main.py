@@ -88,6 +88,8 @@ async def create_category(category: CategoryCreate):
 
 async def Create_Events(event:CreateEvent):
     async with engine.begin() as connection:
+
+        # Check for valid Category
         
         result= await connection.execute(
 
@@ -111,6 +113,8 @@ async def Create_Events(event:CreateEvent):
            detail="Category not found"
         )
 
+
+            # Check for valid  venue
         result = await connection.execute(
 
             text("""
@@ -131,6 +135,34 @@ async def Create_Events(event:CreateEvent):
            status_code=404,
            detail="Venue not found"
         )
+
+
+
+        result = await connection.execute(
+
+                text("""
+                 
+                     SELECT id FROM events WHERE venue_id=:venue_id AND DATE(starts_at) = DATE(:starts_at)
+                 
+                 
+                 
+                 """),{"venue_id":event.venue_id,
+                       "starts_at":event.starts_at
+                 }
+
+         )
+
+
+        existing_event= result.fetchone()
+
+
+
+        if existing_event is not None:
+          raise HTTPException(
+          status_code=409,
+          detail="Venue already has an event on this date"
+    )
+
 
 
 
@@ -176,6 +208,9 @@ async def Create_Events(event:CreateEvent):
            "created_at":new_event.created_at,
 
         }
+
+
+
 
 
 @app.get("/events")
@@ -302,6 +337,7 @@ async def update_event(event_id:int,event:CreateEvent):
            )
 
 
+               #Check if Category exsist
         result= await connection.execute(
 
             text("""
@@ -328,6 +364,49 @@ async def update_event(event_id:int,event:CreateEvent):
                  detail="Category  not found"
            )
 
+
+
+
+        result = await connection.execute(
+
+                   text("""
+                   
+                        SELECT id FROM events WHERE venue_id = :venue_id AND DATE(starts_at) = DATE(:starts_at)
+
+                        AND id !=:event_id
+
+                   
+                   
+                   
+                   
+                   """),{
+
+
+                            "venue_id":event.venue_id,
+                            "starts_at":event.starts_at,
+                            "event_id":event_id
+                   }
+
+
+
+
+
+         )
+
+
+        clashing_events= result.fetchone()
+
+
+
+        if clashing_events is not None:
+                  raise HTTPException(
+                 status_code= 404,
+                 detail="Venue  already has an event on this date"
+           )
+
+
+
+
         
         result = await connection.execute(
                    
@@ -339,7 +418,7 @@ async def update_event(event_id:int,event:CreateEvent):
                        description = :description,
                        event_type = :event_type,
                        category_id = :category_id,
-                       venue= :venue,
+                       venue_id= :venue_id,
                        starts_at = :starts_at
                     WHERE id = :event_id
 
@@ -350,7 +429,7 @@ async def update_event(event_id:int,event:CreateEvent):
                            description,
                            event_type,
                            category_id,
-                           venue,
+                           venue_id,
                            starts_at,
                            created_at
 
@@ -367,7 +446,7 @@ async def update_event(event_id:int,event:CreateEvent):
            "description":event.description,
            "event_type":event.event_type.value,
            "category_id":event.category_id,
-           "venue":event.venue,
+           "venue_id":event.venue_id,
            "starts_at":event.starts_at,
 
 
@@ -385,7 +464,7 @@ async def update_event(event_id:int,event:CreateEvent):
              "description":updated_event.description,
              "event_type":updated_event.event_type,
              "category_id":updated_event.category_id,
-             "venue":updated_event.venue,
+             "venue_id":updated_event.venue_id,
              "starts_at":updated_event.starts_at,
              "created_at":updated_event.created_at,
         
@@ -746,14 +825,23 @@ async def delete_venue(venue_id:int):
 
             # Deleting the venue
         
-
-        result = await connection.execute(
+        try:
+        
+         async with engine.begin() as conection:
+          await connection.execute(
 
                 text("DELETE FROM venues WHERE id= :venue_id "),
 
                 {"venue_id":venue_id}
 
 
+        )
+        
+        except IntegrityError:
+
+         raise HTTPException(
+            status_code=409,
+            detail="Cannot delete venue because it is being used by one or more events"
         )
 
 
