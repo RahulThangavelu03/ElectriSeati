@@ -1,26 +1,13 @@
-from sqlalchemy import String
+from sqlalchemy import ForeignKey, String, Index, func
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Index
-from database import Base
 
-from sqlalchemy import Index, func
+from database import Base
 
 
 class Venue(Base):
 
     __tablename__ = "venues"
 
-  
-
- 
-    __table_args__ = (
-    Index(
-        "uq_venue_name_location",
-        "name",
-        "location",
-        unique=True
-    ),
-)
     id: Mapped[int] = mapped_column(primary_key=True)
 
     name: Mapped[str] = mapped_column(
@@ -31,6 +18,11 @@ class Venue(Base):
     location: Mapped[str] = mapped_column(
         String(200),
         nullable=False
+    )
+
+    city_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cities.id"),
+        nullable=True
     )
 
 

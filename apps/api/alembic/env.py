@@ -8,7 +8,10 @@ from database import Base
 from app.models.event import Event  # noqa: F401
 from app.models.category import Category
 from app.models.venue import Venue
+from app.models.country import Country
+from app.models.city import City
 
+from app.models.state import State
 
 config = context.config
 

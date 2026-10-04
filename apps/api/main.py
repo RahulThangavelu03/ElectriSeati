@@ -25,7 +25,7 @@ class CreateEvent(BaseModel):
 class CreateVenue(BaseModel):
 
     name:str
-    location:str
+    city_id:int
 
 
 
@@ -537,74 +537,77 @@ async def delete_event(event_id:int):
         }
 
 
-@app.post("/venues")
 
-async def create_venue(venue:CreateVenue):
+
+
+@app.post("/venues")
+async def create_venue(venue: CreateVenue):
 
     async with engine.begin() as connection:
 
-
-        result = await connection.execute(
-
-                 text("""
-                 
-                         SELECT id FROM venues WHERE LOWER(name) = LOWER(:venue_name) AND  LOWER(location) = LOWER(:venue_location)
-                 
-                 """),
-                    {"venue_name":venue.name,
-                    "venue_location":venue.location}
-
+        # 1. Check if city exists
+        city_result = await connection.execute(
+            text("""
+                SELECT id
+                FROM cities
+                WHERE id = :city_id
+            """),
+            {
+                "city_id": venue.city_id
+            }
         )
 
+        city = city_result.fetchone()
+
+        if city is None:
+            raise HTTPException(
+                status_code=404,
+                detail="City does not exist"
+            )
+
+        # 2. Check if venue already exists in this city
+        result = await connection.execute(
+            text("""
+                SELECT id
+                FROM venues
+                WHERE LOWER(name) = LOWER(:venue_name)
+                AND city_id = :venue_city_id
+            """),
+            {
+                "venue_name": venue.name,
+                "venue_city_id": venue.city_id
+            }
+        )
 
         new_data = result.fetchone()
 
         if new_data is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Venue already exists"
+            )
 
-                  raise HTTPException(
-                status_code= 409,
-                detail="Venue already exsists"
-           )
-
-
+        # 3. Create venue
         result = await connection.execute(
-
-             text("""
-             
-                     INSERT INTO venues (name ,location) 
-
-                     VALUES (:name,:location)
-                     RETURNING id,name,location
-             
-             
-             
-             
-             
-             
-             """),
-
-
-                {   
-                    "name":venue.name,
-                
-                    "location":venue.location                
-                }
-
-                 
-
-
-
-
+            text("""
+                INSERT INTO venues (name, city_id)
+                VALUES (:name, :city_id)
+                RETURNING id, name, city_id
+            """),
+            {
+                "name": venue.name,
+                "city_id": venue.city_id
+            }
         )
 
         new_venue = result.fetchone()
 
         return {
-
-                  "id":new_venue.id,  
-                 "name":new_venue.name,
-                 "location":new_venue.location
+            "id": new_venue.id,
+            "name": new_venue.name,
+            "city_id": new_venue.city_id
         }
+
 
 
 @app.get("/venues")
@@ -617,7 +620,7 @@ async def show_venues():
 
 
             text("""
-                  SELECT id,name,location FROM venues 
+                  SELECT id,name,city_id FROM venues 
                     
             
             """)
@@ -631,7 +634,7 @@ async def show_venues():
             {
                "id":row.id,
                "name":row.name,
-               "location":row.location
+               "city_id":row.city_id
 
             }
 
@@ -721,6 +724,56 @@ async def Update_venue(venue_id:int ,venue:CreateVenue):
            )
 
 
+            # Check if city exsist
+
+        result = await connection.execute(
+
+            text("""
+             SELECT id FROM cities WHERE id = :city_id
+            
+            
+             """),{"city_id":venue.city_id}
+
+           )
+
+        city = result.fetchone()
+
+
+        if city is None:
+
+
+              raise HTTPException(
+                status_code=404,
+                detail="City not found"
+            )
+        
+
+        result = await connection.execute(
+
+                   text(""" 
+                   
+                   SELECT id FROM venues WHERE LOWER(name) = LOWER (:name) AND  city_id = :city_id AND id!=:venue_id
+                   
+                   
+                   """),{
+                           "name":venue.name, 
+                          "city_id":venue.city_id,
+                          "venue_id":venue_id
+
+                   }
+
+        ) 
+
+        duplicate = result.fetchone()
+
+        if duplicate is not None:
+
+              raise HTTPException(
+                status_code=409,
+                detail="Venue already exists in this city"
+            )
+
+
     try:
 
         
@@ -736,7 +789,7 @@ async def Update_venue(venue_id:int ,venue:CreateVenue):
 
                      
                      name=:name,
-                     location=:location
+                     city_id=:city_id
 
                 WHERE id=:venue_id
 
@@ -745,7 +798,7 @@ async def Update_venue(venue_id:int ,venue:CreateVenue):
 
                          id,
                          name,
-                         location
+                         city_id
 
              
              
@@ -756,7 +809,7 @@ async def Update_venue(venue_id:int ,venue:CreateVenue):
                 {
                    "venue_id":venue_id,
                    "name":venue.name,
-                   "location":venue.location
+                   "city_id":venue.city_id
 
                 }
 
@@ -779,7 +832,7 @@ async def Update_venue(venue_id:int ,venue:CreateVenue):
 
                  "id":updated_venue.id,
                  "name":updated_venue.name,
-                 "location":updated_venue.location
+                 "city_id":updated_venue.city_id
         }
 
 
