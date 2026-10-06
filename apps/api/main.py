@@ -29,6 +29,17 @@ class CreateVenue(BaseModel):
 
 
 
+class CreateInventory(BaseModel):
+      
+      
+      total_capacity:int
+
+      
+class UpdateInventory(BaseModel):
+
+         total_capacity:int
+
+
 @app.get("/health")
 async def healthcheck():
      async with engine.connect() as connection:
@@ -43,7 +54,7 @@ class CategoryCreate(BaseModel):
 @app.get("/categories")
 async def GetCategories():
      async with engine.connect() as connection:
-          result = await connection.execute(
+          result = await connection.execute (
 
                text("SELECT id ,name FROM categories ORDER BY id")
           )
@@ -136,7 +147,7 @@ async def Create_Events(event:CreateEvent):
            detail="Venue not found"
         )
 
-
+             # check for exsisting event
 
         result = await connection.execute(
 
@@ -904,6 +915,276 @@ async def delete_venue(venue_id:int):
         }
         
         
+@app.post("/events/{event_id}/inventory")
+async def add_inventory(
+    event_id: int,
+    inventory: CreateInventory
+):
+
+    async with engine.begin() as connection:
+
+        # Check for event
+
+        result = await connection.execute(
+            text("""
+                SELECT id, event_type
+                FROM events
+                WHERE id = :event_id
+            """),
+            {
+                "event_id": event_id
+            }
+        )
+
+        event_data = result.fetchone()
+
+        if event_data is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Event is not found"
+            )
+
+        # Check event type
+
+        if event_data.event_type != "CAPACITY":
+            raise HTTPException(
+                status_code=400,
+                detail="Inventory can only be created for CAPACITY events"
+            )
+
+        
+        # Check whether inventory already exists
+
+         
+        result  = await connection.execute(
+
+
+
+            text("""
+            
+                   SELECT id from inventories WHERE event_id=:event_id
+            
+            
+            """),{"event_id":event_id}
+        )
+
+        inventory= result.fetchone()
+
+        if inventory is not None:
+             raise HTTPException(
+                status_code=409,
+                detail="Inventory already exsists"
+            )
+
+
+
+
 
 
         
+        # Validate total_capacity
+
+
+        if inventory.total_capacity <=0:
+
+             
+             raise HTTPException(
+                status_code=400,
+                detail="Inventory capacity must be greater than 0 "
+            )
+
+
+
+        # Then:
+        # INSERT inventory
+
+
+        result = await connectio.execute(
+         text("""
+         
+                INSERT INTO inventories(event_id, total_capacity, sold_quantity, locked_quantity)
+                 VALUES(:event_id,:total_capacity, 0, 0) 
+
+                 RETURNING id,total_capacity
+         
+         """),{"event_id":event_id,"total_capacity":inventory.total_capacity} 
+
+        )
+
+
+@app.get("/events/{event_id}/inventory")
+async def get_inventory(event_id: int):
+
+    async with engine.connect() as connection:
+
+        # 1. Check event
+        result = await connection.execute(
+            text("""
+                SELECT id
+                FROM events
+                WHERE id = :event_id
+            """),
+            {"event_id": event_id}
+        )
+
+        event = result.fetchone()
+
+        if event is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Event does not exist"
+            )
+
+        # 2. Get inventory
+        result = await connection.execute(
+            text("""
+                SELECT id, event_id, total_capacity,
+                       sold_quantity, locked_quantity
+                FROM inventories
+                WHERE event_id = :event_id
+            """),
+            {"event_id": event_id}
+        )
+
+        inventory = result.fetchone()
+
+        if inventory is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Inventory does not exist"
+            )
+
+        # 3. Return inventory
+        return {
+            "id": inventory.id,
+            "event_id": inventory.event_id,
+            "total_capacity": inventory.total_capacity,
+            "sold_quantity": inventory.sold_quantity,
+            "locked_quantity": inventory.locked_quantity
+        }
+
+
+@app.put("/events/{event_id}/inventories")
+
+async def update_inventory(event_id:int ,inventory:UpdateInventory):
+
+    async with engine.begin() as connection:
+
+
+
+   
+        result = await connection.execute(
+
+               text("""
+               
+               
+               SELECT id FROM events WHERE id=:event_id
+               
+               
+               """),{"event_id":event_id}
+       
+
+        )
+
+        event = result.fetchone()
+
+        if event is None:
+
+              raise HTTPException(
+                status_code=404,
+                detail="Event does not exist"
+            )
+
+        
+        result= await conection.execute(
+
+             text("""
+             
+                  SELECT id FROM inventories WHERE event_id = :event_id             
+             """),{"event_id":event_id}
+
+        )
+
+        exsisting_inventory= result.fetchone()
+
+
+        if exsisting_inventory is None:
+
+               raise HTTPException(
+                status_code=404,
+                detail="Inventory does not exist"
+            )
+
+
+        if inventory.total_capacity <= 0:
+             raise HTTPException(
+        status_code=400,
+        detail="Total capacity must be greater than zero"
+    )
+
+
+
+
+      
+
+
+        result = await connection.execute(
+
+            text("""
+            
+            SELECT sold_quantity , locked_quantity FROM inventories WHERE event_id = :event_id
+            
+            
+            """),{"event_id":event_id}
+
+        )
+
+
+        quantity = result.fetchone()
+
+        if inventory.total_capacity < quantity.sold_quantity + quantity.locked_quantity:
+                    raise HTTPException(
+                status_code=409,
+                detail="Total capacity cannot be less than sold quantity and locked quantity combined "
+            )
+
+
+        result = await connection.execute(
+         
+         text("""
+         
+               UPDATE inventories SET total_capacity =:total_capacity 
+
+               WHERE event_id = :event_id
+                RETURNING id,event_id, total_capacity ,sold_quantity, locked_quantity
+         
+         """),{"event_id":event_id,"total_capacity":inventory.total_capacity}
+
+
+)
+        
+
+        inventory_data = result.fetchone()
+
+        return {
+
+                 "id" : inventory_data.id,
+                 "event_id": inventory_data.event_id,
+                 "total_capacity": inventory_data.total_capacity,
+                 "sold_quantity": inventory_data.sold_quantity,
+                 "locked_quantity": inventory_data.locked_quantity,
+        }
+
+
+        
+
+
+        
+
+
+        
+
+
+
+
+
